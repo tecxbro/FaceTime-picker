@@ -5,7 +5,6 @@
 import Darwin
 import Foundation
 
-
 final class ContactPermissionResult: @unchecked Sendable {
   private let lock = NSLock()
   private var storedGranted = false
@@ -101,6 +100,7 @@ func contactLabels(_ contact: CNContact) -> Set<String> {
 }
 
 func resolveTrustedIdentities(numbers: [String]) -> ContactResolution {
+  // The raw-number index remains usable even when Contacts permission or lookup fails.
   let baseIndex = TrustedIdentityIndex(configuredNumbers: numbers)
   let store = CNContactStore()
   let (granted, permissionWarning) = requestContactsAccess(store: store)
@@ -125,6 +125,9 @@ func resolveTrustedIdentities(numbers: [String]) -> ContactResolution {
     try store.enumerateContacts(with: request) { contact, _ in
       let labels = contactLabels(contact)
       labelsByContact[contact.identifier] = labels
+
+      // Count every owner of an alias, not only trusted contacts. A name shared
+      // with any other contact is ambiguous and must not become trusted.
       for label in labels {
         aliasOwners[normalizeSearchText(label), default: []].insert(contact.identifier)
       }
@@ -169,6 +172,8 @@ func resolveTrustedIdentities(numbers: [String]) -> ContactResolution {
 }
 
 func resolveTrustedIdentitiesOffMain(numbers: [String]) -> ContactResolution {
+  // Contacts enumeration and its permission callback can block. Keep that work
+  // off the main run loop used by Accessibility observation and call actions.
   let result = ContactResolutionResult()
   let semaphore = DispatchSemaphore(value: 0)
   DispatchQueue.global(qos: .userInitiated).async {
@@ -183,7 +188,5 @@ func resolveTrustedIdentitiesOffMain(numbers: [String]) -> ContactResolution {
       warning: "Contacts lookup timed out. Saved-name matching is disabled for this snapshot."
     )
 }
-
-// MARK: - Accessibility helpers
 
 #endif
