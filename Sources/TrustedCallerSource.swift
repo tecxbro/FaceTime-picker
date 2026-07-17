@@ -1,6 +1,7 @@
 import Foundation
 
 #if os(macOS)
+  import Darwin
   import SQLite3
 #endif
 
@@ -66,7 +67,16 @@ final class ConfiguredTrustedCallerSource: TrustedCallerSource, @unchecked Senda
     }
     lock.unlock()
 
-    print("Enter trusted phone number(s), separated by commas:")
+    #if os(macOS)
+      // run.sh supplies the already-collected numbers through stdin. Keep the prompt only for
+      // developers who launch the compiled binary directly from an interactive Terminal.
+      if isatty(STDIN_FILENO) != 0 {
+        print("Enter trusted phone number(s), separated by commas:")
+      }
+    #else
+      print("Enter trusted phone number(s), separated by commas:")
+    #endif
+
     guard let line = readLine() else { throw IdentitySourceError.terminalInputUnavailable }
     let values = line
       .split(separator: ",", omittingEmptySubsequences: true)
