@@ -24,11 +24,29 @@ print "  2) Use a local SQLite database"
 read "source_choice?Choose [1]: "
 source_choice="${source_choice:-1}"
 unset FACETIME_PICKER_SQLITE_PATH
+terminal_numbers=""
 
 case "$source_choice" in
   1)
-    print ""
-    print "You will be asked for the trusted phone number(s) when the helper starts."
+    read "terminal_numbers?Enter trusted phone number(s), separated by commas: "
+
+    valid_count=0
+    for value in ${(s:,:)terminal_numbers}; do
+      number="$(print -r -- "$value" | /usr/bin/xargs)"
+      [[ -z "$number" ]] && continue
+
+      digits="${number//[^0-9]/}"
+      if (( ${#digits} < 7 || ${#digits} > 15 )); then
+        print -u2 "Invalid phone number: $number"
+        exit 2
+      fi
+      (( valid_count += 1 ))
+    done
+
+    if (( valid_count == 0 )); then
+      print -u2 "Enter at least one trusted phone number."
+      exit 2
+    fi
     ;;
   2)
     default_database="$ROOT/local-data/trusted-callers.sqlite3"
@@ -94,4 +112,9 @@ print ""
 zsh "$ROOT/build.sh"
 print ""
 print "Starting FaceTime Picker. Press Control+C to stop."
-exec "$ROOT/build/FaceTimePicker" --mode gatekeeper --confirmed-enable
+
+if [[ "$source_choice" == "1" ]]; then
+  exec "$ROOT/build/FaceTimePicker" --mode gatekeeper --confirmed-enable <<< "$terminal_numbers"
+else
+  exec "$ROOT/build/FaceTimePicker" --mode gatekeeper --confirmed-enable
+fi
