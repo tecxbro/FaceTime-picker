@@ -84,6 +84,9 @@ final class NotificationCenterMonitor: @unchecked Sendable {
     self.appElement = AXUIElementCreateApplication(app.processIdentifier)
     _ = AXUIElementSetMessagingTimeout(appElement, accessibilityTimeout)
 
+    // AX notifications are the low-latency path. Notification Center does not
+    // consistently emit every useful event, so focused polling runs alongside
+    // the observer and both paths feed the same deduplicated inspection queue.
     var createdObserver: AXObserver?
     let createResult = AXObserverCreate(
       app.processIdentifier,
@@ -126,6 +129,9 @@ final class NotificationCenterMonitor: @unchecked Sendable {
   func updateIdentity(_ newIdentity: TrustedIdentityIndex, source: String) {
     precondition(Thread.isMainThread)
     identity = newIdentity
+
+    // A refreshed allowlist can change the decision for a currently displayed
+    // caller, so discard cached call state and force a fresh classification.
     activeCall = nil
     pendingUnverifiedCall = nil
     logLine(
