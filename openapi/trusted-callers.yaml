@@ -1,0 +1,43 @@
+openapi: 3.1.1
+info:
+  title: FaceTime Picker Trusted Callers API
+  version: 1.0.0
+  description: Provider-neutral allowlist contract consumed by the FaceTime Picker macOS helper.
+paths:
+  /trusted-callers:
+    get:
+      operationId: getTrustedCallers
+      responses:
+        '200':
+          description: Current trusted-caller records.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrustedCallerEnvelope'
+        '401': { description: Authentication required or invalid. }
+        '403': { description: Caller is not permitted to read the allowlist. }
+        '500': { description: Provider-side failure. }
+components:
+  schemas:
+    TrustedCallerEnvelope:
+      type: object
+      required: [schemaVersion, trustedCallers]
+      additionalProperties: false
+      properties:
+        schemaVersion: { type: integer, const: 1 }
+        cacheTTLSeconds: { type: integer, minimum: 30, maximum: 86400 }
+        trustedCallers:
+          type: array
+          maxItems: 5000
+          items: { $ref: '#/components/schemas/TrustedCaller' }
+    TrustedCaller:
+      type: object
+      required: [phoneNumber]
+      additionalProperties: false
+      properties:
+        id: { type: string, maxLength: 200 }
+        phoneNumber:
+          type: string
+          description: Prefer E.164 formatting. The client validates 7–15 digits after normalization.
+          maxLength: 40
+        enabled: { type: boolean, default: true }
