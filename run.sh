@@ -6,8 +6,20 @@ cd "$ROOT"
 
 print "FaceTime Picker — local edition"
 print ""
-print "Trusted caller source:"
-print "  1) Type number(s) in Terminal"
+
+if [[ "$(uname -s)" != "Darwin" ]]; then
+  print -u2 "FaceTime Picker runs only on macOS."
+  exit 1
+fi
+
+if ! /usr/bin/xcrun --find swiftc >/dev/null 2>&1; then
+  print -u2 "Swift is not available. Install Apple's Command Line Tools first:"
+  print -u2 "  xcode-select --install"
+  exit 1
+fi
+
+print "How should FaceTime Picker load trusted callers?"
+print "  1) Type phone number(s) in Terminal"
 print "  2) Use a local SQLite database"
 read "source_choice?Choose [1]: "
 source_choice="${source_choice:-1}"
@@ -15,6 +27,8 @@ unset FACETIME_PICKER_SQLITE_PATH
 
 case "$source_choice" in
   1)
+    print ""
+    print "You will be asked for the trusted phone number(s) when the helper starts."
     ;;
   2)
     default_database="$ROOT/local-data/trusted-callers.sqlite3"
@@ -35,18 +49,30 @@ SQL
     if [[ "$enabled_count" == "0" ]]; then
       print "The database has no enabled trusted callers."
       read "raw_numbers?Enter trusted phone number(s), separated by commas: "
+
+      inserted_count=0
       for value in ${(s:,:)raw_numbers}; do
         number="$(print -r -- "$value" | /usr/bin/xargs)"
+        [[ -z "$number" ]] && continue
+
         digits="${number//[^0-9]/}"
         if (( ${#digits} < 7 || ${#digits} > 15 )); then
           print -u2 "Invalid phone number: $number"
           exit 2
         fi
+
         escaped="${number//\'/\'\'}"
         /usr/bin/sqlite3 "$database_path" \
           "INSERT OR REPLACE INTO trusted_callers (phone_number, enabled) VALUES ('$escaped', 1);"
+        (( inserted_count += 1 ))
       done
+
+      if (( inserted_count == 0 )); then
+        print -u2 "Enter at least one trusted phone number."
+        exit 2
+      fi
     fi
+
     export FACETIME_PICKER_SQLITE_PATH="$database_path"
     ;;
   *)
@@ -56,37 +82,16 @@ SQL
 esac
 
 print ""
-print "Run mode:"
-print "  1) Detector — log calls only"
-print "  2) Trusted answer — answer trusted callers, leave others ringing"
-print "  3) Gatekeeper — answer trusted callers and decline others"
-read "mode_choice?Choose [1]: "
-mode_choice="${mode_choice:-1}"
-
-case "$mode_choice" in
-  1) mode="detector" ;;
-  2) mode="answer-trusted" ;;
-  3) mode="gatekeeper" ;;
-  *)
-    print -u2 "Choose 1, 2, or 3."
-    exit 2
-    ;;
-esac
-
-arguments=(--mode "$mode")
-if [[ "$mode" != "detector" ]]; then
-  print ""
-  print "WARNING: answering a FaceTime call exposes the camera and microphone."
-  if [[ "$mode" == "gatekeeper" ]]; then
-    print "Gatekeeper mode also declines callers that do not safely match the allowlist."
-  fi
-  read "confirmation?Type ENABLE to continue: "
-  if [[ "$confirmation" != "ENABLE" ]]; then
-    print "Cancelled."
-    exit 0
-  fi
-  arguments+=(--confirmed-enable)
+print "FaceTime Picker will answer trusted callers automatically and decline callers that do not safely match."
+print "Answering a FaceTime call turns on this Mac's camera and microphone."
+read "confirmation?Type ENABLE to start: "
+if [[ "$confirmation" != "ENABLE" ]]; then
+  print "Cancelled. Nothing was enabled."
+  exit 0
 fi
 
+print ""
 zsh "$ROOT/build.sh"
-exec "$ROOT/build/FaceTimePicker" "${arguments[@]}"
+print ""
+print "Starting FaceTime Picker. Press Control+C to stop."
+exec "$ROOT/build/FaceTimePicker" --mode gatekeeper --confirmed-enable
