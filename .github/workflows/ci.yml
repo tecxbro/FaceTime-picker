@@ -18,7 +18,9 @@ jobs:
         run: zsh "./Validate Core Logic.command"
       - name: Native macOS build
         run: zsh ./build.sh
-      - name: Configuration regression scan
+      - name: Local-branch privacy regression scan
         run: |
           ! grep -RIn --exclude-dir=.git -- '--trusted-number' Sources *.command
-          ! grep -RIn --exclude-dir=.git 'var number = "+' Sources
+          ! grep -RIn --exclude-dir=.git -E 'FACETIME_PICKER_IDENTITY_URL|URLSession|HTTPURLResponse' Sources
+          ! grep -RIn -E '216.?571.?5884|Paras Mama' Sources README.md SECURITY.md docs scripts *.command
+          grep -RIn 'FACETIME_PICKER_SQLITE_PATH' README.md Sources scripts
