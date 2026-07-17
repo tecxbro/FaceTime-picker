@@ -48,7 +48,7 @@ struct Configuration {
         index += 1
       case "--refresh-seconds":
         guard index + 1 < arguments.count,
-          let parsed = Double(arguments[index + 1]), parsed >= 30
+          let parsed = Double(arguments[index + 1]), parsed >= 5
         else {
           throw ConfigurationError.invalidArguments
         }
@@ -85,7 +85,7 @@ enum ConfigurationError: Error, LocalizedError {
     switch self {
     case .invalidArguments:
       return
-        "Usage: FaceTimePicker --mode detector|answer-trusted|gatekeeper [--confirmed-enable] [--log-caller-text] [--refresh-seconds N] [--max-stale-seconds N]"
+        "Usage: FaceTimePicker --mode detector|answer-trusted|gatekeeper [--confirmed-enable] [--log-caller-text] [--refresh-seconds N] [--max-stale-seconds N]. Leave local source variables unset to enter trusted numbers in Terminal, or configure FACETIME_PICKER_SQLITE_PATH / FACETIME_PICKER_IDENTITY_FILE."
     }
   }
 }
