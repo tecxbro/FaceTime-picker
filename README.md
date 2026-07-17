@@ -1,64 +1,84 @@
 # FaceTime Picker — local edition
 
-A native Swift 6 macOS helper that watches incoming FaceTime notifications and applies a local allowlist.
+A native Swift 6 macOS helper that watches incoming FaceTime notifications, answers trusted callers, and declines callers whose visible identity does not safely match your local allowlist.
 
-- **Detector:** logs incoming-call detection and never presses a button.
-- **Trusted answer:** answers trusted callers and leaves everyone else ringing.
-- **Gatekeeper:** answers trusted callers and declines explicit non-matches.
-- Missing or internal caller text receives a 900 ms grace period before Gatekeeper declines the call.
+This is the `local` branch. It makes no network requests. The `main` branch is the database/API-backed edition.
 
-This is the `local` branch. It performs no network requests. The `main` branch is the database/API-backed edition.
+## Run it
+
+Copy and paste this single command into Terminal:
+
+```zsh
+git clone --branch local --single-branch https://github.com/tecxbro/FaceTime-picker.git && cd FaceTime-picker && zsh ./run.sh
+```
+
+For later launches from the downloaded folder:
+
+```zsh
+zsh ./run.sh
+```
+
+That is the complete user flow. The launcher:
+
+1. checks that the Mac has Swift available;
+2. asks whether trusted callers should come from Terminal input or a local SQLite database;
+3. builds the native helper automatically;
+4. asks you to type `ENABLE` once;
+5. starts FaceTime Picker.
+
+There are no separate setup stages or feature-enablement commands.
+
+Stop the helper at any time with **Control+C**.
 
 ## Requirements
 
 - macOS 14.4 or newer
 - FaceTime configured on the Mac
 - Xcode Command Line Tools with Swift 6
-- Accessibility permission for the compiled `FaceTimePicker` binary
+- Accessibility permission for the compiled `FaceTimePicker` executable
 - Contacts permission when FaceTime displays a saved contact name instead of a number
 
-Install the command-line tools if needed:
+Install Apple's command-line tools when needed:
 
 ```zsh
 xcode-select --install
 ```
 
-## Fork, clone, and run
+## First-launch permissions
 
-```zsh
-git clone --branch local --single-branch https://github.com/tecxbro/FaceTime-picker.git
-cd FaceTime-picker
-zsh ./run.sh
-```
-
-`run.sh` builds the helper and guides you through two choices:
-
-1. where trusted numbers come from;
-2. which safety mode to run.
-
-The first launch asks macOS for Accessibility permission. Enable the compiled executable under:
+The first launch asks macOS for Accessibility permission. Add and enable the compiled executable here:
 
 **System Settings → Privacy & Security → Accessibility**
 
-Then run `zsh ./run.sh` again.
+The executable is located at:
 
-Stop the helper with **Control+C**.
+```text
+FaceTime-picker/build/FaceTimePicker
+```
 
-## Trusted caller sources
+After granting permission, run this again:
 
-### Option 1: type numbers in Terminal
+```zsh
+zsh ./run.sh
+```
 
-Choose option 1 in `run.sh`, then enter one or more numbers separated by commas.
+macOS may also request Contacts permission so configured numbers can match saved contact names.
+
+## Trusted caller choices
+
+### Type numbers in Terminal
+
+Choose option 1 and enter one or more trusted numbers separated by commas:
 
 ```text
 +1 202 555 0147, +44 20 7946 0958
 ```
 
-The values stay only in the running process. They are not written to disk or included in normal logs.
+The values remain only in the running process. They are not written to disk or included in normal logs.
 
-### Option 2: local SQLite
+### Use local SQLite
 
-Choose option 2 in `run.sh`. The script creates this database by default:
+Choose option 2. By default, the launcher creates:
 
 ```text
 local-data/trusted-callers.sqlite3
@@ -74,9 +94,9 @@ CREATE TABLE trusted_callers (
 );
 ```
 
-Only rows with `enabled = 1` are trusted. The helper opens the database read-only and refreshes the allowlist every 30 seconds.
+Only rows with `enabled = 1` are trusted. FaceTime Picker opens the database read-only and refreshes the allowlist every 30 seconds.
 
-Manage the database with the built-in `sqlite3` command:
+To manage the database manually:
 
 ```zsh
 sqlite3 local-data/trusted-callers.sqlite3
@@ -93,35 +113,24 @@ DELETE FROM trusted_callers WHERE id = 1;
 
 Local database files are ignored by Git.
 
-## Safety modes
+## What happens while it runs
 
-Start with **Detector**. Confirm that the correct caller is recognized before enabling call actions.
+- A trusted caller is answered automatically.
+- A visible caller identity that does not safely match the allowlist is declined.
+- Blank or internal macOS Accessibility text gets a 900 ms grace period before a decision is made.
+- Unknown, ambiguous, or stale identity data fails closed rather than being treated as trusted.
 
-### Detector
+Answering a FaceTime call exposes the Mac's camera and microphone. The launcher therefore requires the explicit `ENABLE` confirmation every time it starts.
 
-Read-only. It never answers or declines.
+## Test or build manually
 
-### Trusted answer
-
-Automatically answers a trusted caller. Other callers keep ringing.
-
-### Gatekeeper
-
-Answers a trusted caller and declines a caller whose visible identity does not match.
-
-If caller identity is blank or is only an internal macOS Accessibility label such as `widgets-overlay-view`, the helper waits 900 ms and checks again. It does not treat that internal label as a real caller name.
-
-Answering a FaceTime call exposes the Mac's camera and microphone. `run.sh` requires an explicit `ENABLE` confirmation before Trusted Answer or Gatekeeper mode starts.
-
-## Test and build
-
-Run all core tests, the SQLite fixture test, the privacy regression scan, plist validation, and the native macOS build:
+Run all core tests, the SQLite fixture test, privacy checks, plist validation, launcher checks, and the native macOS build:
 
 ```zsh
 zsh ./test.sh
 ```
 
-Build without running tests:
+Build without starting the helper:
 
 ```zsh
 zsh ./build.sh
@@ -135,6 +144,7 @@ build/FaceTimePicker
 
 ## Code map
 
+- `run.sh` — the single interactive setup, build, confirmation, and launch command.
 - `Sources/CoreLogic.swift` — phone normalization, alias matching, and caller decisions.
 - `Sources/TrustedCallerSource.swift` — Terminal and read-only SQLite allowlists.
 - `Sources/ContactsResolver.swift` — maps configured numbers to unique local Contacts aliases.
@@ -149,7 +159,7 @@ The source is split by responsibility so reviewers can inspect call detection, i
 ## Privacy and failure behavior
 
 - No trusted number is hardcoded in the repository.
-- The local branch contains no HTTP client or cloud identity endpoint.
+- The `local` branch contains no HTTP client or cloud identity endpoint.
 - Normal logs report `trusted`, `untrusted`, `ambiguous`, or `unverified`; raw caller text is off by default.
 - SQLite is opened read-only by the Swift process.
 - If SQLite refresh keeps failing until the configured stale limit expires, the allowlist is cleared and no caller is trusted until the database recovers.
