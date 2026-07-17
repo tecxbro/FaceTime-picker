@@ -1,15 +1,10 @@
 .DS_Store
 build/
-.phase1-proven
-.phase2-proven
-config/trusted-callers.local.json
-*.local.json
-.env
-.env.*
-!.env.example
 local-data/
 *.sqlite
 *.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
 *.db
 *.db-wal
 *.db-shm
