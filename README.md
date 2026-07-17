@@ -22,9 +22,9 @@ That is the complete user flow. The launcher:
 
 1. checks that the Mac has Swift available;
 2. asks whether trusted callers should come from Terminal input or a local SQLite database;
-3. builds the native helper automatically;
+3. asks for the phone numbers or database details;
 4. asks you to type `ENABLE` once;
-5. starts FaceTime Picker.
+5. builds and starts FaceTime Picker automatically.
 
 There are no separate setup stages or feature-enablement commands.
 
