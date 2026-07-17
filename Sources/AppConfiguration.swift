@@ -1,8 +1,4 @@
 #if os(macOS)
-@preconcurrency import AppKit
-@preconcurrency import ApplicationServices
-@preconcurrency import Contacts
-import Darwin
 import Foundation
 
 enum RunMode: String {
@@ -73,7 +69,7 @@ struct Configuration {
       logCallerText: logCallerText,
       refreshSecondsOverride: refreshOverride,
       maxStaleSeconds: maxStaleSeconds,
-      identitySource: try IdentitySourceConfiguration.fromEnvironment(environment)
+      identitySource: IdentitySourceConfiguration.fromEnvironment(environment)
     )
   }
 }
@@ -82,11 +78,7 @@ enum ConfigurationError: Error, LocalizedError {
   case invalidArguments
 
   var errorDescription: String? {
-    switch self {
-    case .invalidArguments:
-      return
-        "Usage: FaceTimePicker --mode detector|answer-trusted|gatekeeper [--confirmed-enable] [--log-caller-text] [--refresh-seconds N] [--max-stale-seconds N]. Leave local source variables unset to enter trusted numbers in Terminal, or configure FACETIME_PICKER_SQLITE_PATH / FACETIME_PICKER_IDENTITY_FILE."
-    }
+    "Usage: FaceTimePicker --mode detector|answer-trusted|gatekeeper [--confirmed-enable] [--log-caller-text] [--refresh-seconds N] [--max-stale-seconds N]. Leave FACETIME_PICKER_SQLITE_PATH unset to type numbers in Terminal."
   }
 }
 
@@ -128,6 +120,4 @@ func quoteForLog(_ value: String) -> String {
     + value.replacingOccurrences(of: "\\", with: "\\\\")
     .replacingOccurrences(of: "\"", with: "\\\"") + "\""
 }
-
-// MARK: - Contacts
 #endif

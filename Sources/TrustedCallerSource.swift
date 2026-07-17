@@ -4,6 +4,37 @@ import Foundation
   import SQLite3
 #endif
 
+struct TrustedCallerSnapshot: Equatable, Sendable {
+  let phoneNumbers: [String]
+  let suggestedTTLSeconds: Int?
+}
+
+enum IdentitySourceError: Error, LocalizedError, Equatable {
+  case terminalInputUnavailable
+  case invalidPhoneNumber
+  case emptyAllowlist
+  case sqliteOpenFailed
+  case sqliteQueryFailed
+  case sqliteUnavailable
+
+  var errorDescription: String? {
+    switch self {
+    case .terminalInputUnavailable:
+      return "Trusted phone numbers could not be read from Terminal."
+    case .invalidPhoneNumber:
+      return "A trusted phone number must contain 7 to 15 digits."
+    case .emptyAllowlist:
+      return "No enabled trusted callers were provided."
+    case .sqliteOpenFailed:
+      return "The local SQLite database could not be opened read-only."
+    case .sqliteQueryFailed:
+      return "The SQLite query failed. Expected trusted_callers(phone_number, enabled)."
+    case .sqliteUnavailable:
+      return "SQLite identity sources are supported only on macOS."
+    }
+  }
+}
+
 protocol TrustedCallerSource: Sendable {
   func load() throws -> TrustedCallerSnapshot
 }
@@ -21,18 +52,8 @@ final class ConfiguredTrustedCallerSource: TrustedCallerSource, @unchecked Senda
     switch configuration {
     case .terminal:
       return try loadFromTerminalOnce()
-    case .jsonFile(let url):
-      guard let data = try? Data(contentsOf: url, options: [.mappedIfSafe]) else {
-        throw IdentitySourceError.fileReadFailed
-      }
-      return try decodeTrustedCallerSnapshot(data)
-    case .sqlite(let url, let table, let phoneColumn, let enabledColumn):
-      return try loadFromSQLite(
-        url: url,
-        table: table,
-        phoneColumn: phoneColumn,
-        enabledColumn: enabledColumn
-      )
+    case .sqlite(let url):
+      return try loadFromSQLite(url: url)
     }
   }
 
@@ -58,12 +79,7 @@ final class ConfiguredTrustedCallerSource: TrustedCallerSource, @unchecked Senda
     return snapshot
   }
 
-  private func loadFromSQLite(
-    url: URL,
-    table: String,
-    phoneColumn: String,
-    enabledColumn: String
-  ) throws -> TrustedCallerSnapshot {
+  private func loadFromSQLite(url: URL) throws -> TrustedCallerSnapshot {
     #if os(macOS)
       var database: OpaquePointer?
       let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX
@@ -74,8 +90,7 @@ final class ConfiguredTrustedCallerSource: TrustedCallerSource, @unchecked Senda
       defer { sqlite3_close(database) }
       sqlite3_busy_timeout(database, 750)
 
-      let query =
-        "SELECT \"\(phoneColumn)\" FROM \"\(table)\" WHERE \"\(enabledColumn)\" = 1"
+      let query = "SELECT phone_number FROM trusted_callers WHERE enabled = 1"
       var statement: OpaquePointer?
       guard sqlite3_prepare_v2(database, query, -1, &statement, nil) == SQLITE_OK,
         let statement
@@ -99,34 +114,13 @@ final class ConfiguredTrustedCallerSource: TrustedCallerSource, @unchecked Senda
   }
 }
 
-func decodeTrustedCallerSnapshot(_ data: Data) throws -> TrustedCallerSnapshot {
-  guard data.count <= 256 * 1024 else { throw IdentitySourceError.responseTooLarge }
-  let decoder = JSONDecoder()
-
-  let envelope: TrustedCallerEnvelope
-  if let decoded = try? decoder.decode(TrustedCallerEnvelope.self, from: data) {
-    envelope = decoded
-  } else if let records = try? decoder.decode([TrustedCallerRecord].self, from: data) {
-    envelope = TrustedCallerEnvelope(trustedCallers: records)
-  } else {
-    throw IdentitySourceError.invalidPayload
-  }
-
-  guard envelope.schemaVersion == 1 else {
-    throw IdentitySourceError.unsupportedSchemaVersion(envelope.schemaVersion)
-  }
-  let enabledNumbers = envelope.trustedCallers.filter(\.enabled).map(\.phoneNumber)
-  return try validatedSnapshot(
-    phoneNumbers: enabledNumbers,
-    suggestedTTLSeconds: envelope.cacheTTLSeconds
-  )
-}
-
-func validatedSnapshot(phoneNumbers: [String], suggestedTTLSeconds: Int?) throws
-  -> TrustedCallerSnapshot
-{
+func validatedSnapshot(
+  phoneNumbers: [String],
+  suggestedTTLSeconds: Int?
+) throws -> TrustedCallerSnapshot {
   var seen = Set<String>()
   var validated: [String] = []
+
   for number in phoneNumbers {
     let trimmed = number.trimmingCharacters(in: .whitespacesAndNewlines)
     let digits = digitsOnly(trimmed)
@@ -134,6 +128,7 @@ func validatedSnapshot(phoneNumbers: [String], suggestedTTLSeconds: Int?) throws
     guard seen.insert(digits).inserted else { continue }
     validated.append(trimmed)
   }
+
   guard !validated.isEmpty else { throw IdentitySourceError.emptyAllowlist }
   let ttl = suggestedTTLSeconds.map { max(5, min($0, 86_400)) }
   return TrustedCallerSnapshot(phoneNumbers: validated, suggestedTTLSeconds: ttl)
