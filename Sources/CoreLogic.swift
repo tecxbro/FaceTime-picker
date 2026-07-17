@@ -23,6 +23,7 @@ struct TrustedIdentityIndex: Sendable {
   static let empty = TrustedIdentityIndex(configuredNumbers: [])
 
   func match(texts: [String]) -> IdentityMatch {
+    // Prefer raw-number evidence because it does not depend on Contacts display names.
     for text in texts {
       let digits = digitsOnly(text)
       if digitVariants.contains(where: { variant in
@@ -32,6 +33,8 @@ struct TrustedIdentityIndex: Sendable {
       }
     }
 
+    // A saved name is trusted only after ContactsResolver proves that one local
+    // contact—and no other contact—owns the normalized alias.
     for text in texts {
       let normalized = normalizeSearchText(text)
       if uniqueAliases.contains(where: { containsNormalizedPhrase(normalized, phrase: $0) }) {
@@ -39,6 +42,8 @@ struct TrustedIdentityIndex: Sendable {
       }
     }
 
+    // Preserve ambiguous aliases as an explicit non-match instead of silently
+    // treating them as missing identity. Gatekeeper mode declines this state.
     for text in texts {
       let normalized = normalizeSearchText(text)
       if ambiguousAliases.contains(where: { containsNormalizedPhrase(normalized, phrase: $0) }) {
@@ -74,6 +79,8 @@ func canonicalPhoneVariants(_ input: String) -> Set<String> {
   let digits = digitsOnly(input)
   guard !digits.isEmpty else { return [] }
 
+  // FaceTime may display a US number with or without the leading country code.
+  // Keep the full international form and only add the US-compatible variants.
   var result: Set<String> = [digits]
   if digits.count >= 10 {
     result.insert(String(digits.suffix(10)))
@@ -88,6 +95,8 @@ func normalizeSearchText(_ input: String) -> String {
   var scalars = String.UnicodeScalarView()
   for scalar in input.unicodeScalars {
     switch scalar.value {
+    // Accessibility text can contain invisible bidi controls. Removing them
+    // prevents visually identical caller labels from normalizing differently.
     case 0x200E, 0x200F, 0x202A...0x202E, 0x2066...0x2069:
       continue
     default:
@@ -126,6 +135,7 @@ func isUsableAlias(_ alias: String) -> Bool {
 func containsNormalizedPhrase(_ normalizedHaystack: String, phrase normalizedNeedle: String) -> Bool
 {
   guard !normalizedNeedle.isEmpty else { return false }
+  // Padding with spaces prevents an alias such as "ann" from matching "joanne".
   let paddedHaystack = " " + normalizedHaystack + " "
   let paddedNeedle = " " + normalizedNeedle + " "
   return paddedHaystack.contains(paddedNeedle)
@@ -249,6 +259,8 @@ func gatekeeperIdentityDecision(identityMatch: IdentityMatch, callerText: String
   if identityMatch.isTrusted {
     return .answerTrusted
   }
+  // Only missing/generic identity receives the short grace period. A visible
+  // human name or number is explicit evidence of a non-match and can be declined.
   if callerText == "unavailable" || !looksLikeHumanCallerIdentity(callerText) {
     return .waitForIdentity
   }

@@ -35,6 +35,8 @@ struct ConfiguredTrustedCallerSource: TrustedCallerSource {
       request.setValue(value, forHTTPHeaderField: name)
     }
 
+    // Startup and refresh run synchronously from the coordinator's worker path.
+    // The locked result box keeps URLSession callback data Swift 6 concurrency-safe.
     let result = SynchronousURLResult()
     let semaphore = DispatchSemaphore(value: 0)
     let task = URLSession.shared.dataTask(with: request) { data, response, error in
@@ -81,9 +83,12 @@ private final class SynchronousURLResult: @unchecked Sendable {
 }
 
 func decodeTrustedCallerSnapshot(_ data: Data) throws -> TrustedCallerSnapshot {
+  // Bound the response before decoding so a misconfigured endpoint cannot make
+  // the desktop process allocate an unexpectedly large JSON object.
   guard data.count <= 256 * 1024 else { throw IdentitySourceError.responseTooLarge }
   let decoder = JSONDecoder()
 
+  // The envelope is canonical; the bare array remains a compatibility format.
   let envelope: TrustedCallerEnvelope
   if let decoded = try? decoder.decode(TrustedCallerEnvelope.self, from: data) {
     envelope = decoded
@@ -108,6 +113,9 @@ func decodeTrustedCallerSnapshot(_ data: Data) throws -> TrustedCallerSnapshot {
       normalizedNumbers.append(record.phoneNumber.trimmingCharacters(in: .whitespacesAndNewlines))
     }
   }
+
+  // Rejecting an empty snapshot distinguishes provider failure from an explicit
+  // working allowlist. Refresh logic keeps the previous snapshot until it expires.
   guard !normalizedNumbers.isEmpty else { throw IdentitySourceError.emptyAllowlist }
 
   let ttl = envelope.cacheTTLSeconds.map { max(30, min($0, 86_400)) }

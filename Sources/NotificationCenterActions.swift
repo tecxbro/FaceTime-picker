@@ -11,6 +11,8 @@ extension NotificationCenterMonitor {
     let eventToDetection = milliseconds(from: signal.receivedAt, to: detectionAt)
     let totalInternal = milliseconds(from: inspectionStarted, to: detectionAt)
 
+    // Observer callbacks and the polling fallback can report the same call. The
+    // cooldown and fingerprint checks prevent repeated Answer/Decline presses.
     if lastActionAt != 0 && milliseconds(from: lastActionAt, to: detectionAt) < recentActionCooldownMs {
       deduplicatedCount += 1
       return
@@ -84,6 +86,8 @@ extension NotificationCenterMonitor {
   }
 
   func trackUnverifiedCandidateIfNeeded(_ call: CallSnapshot) {
+    // Only a structurally complete incoming-call UI with missing caller identity
+    // enters the grace path. Partial or unrelated Notification Center UI does not.
     guard mode == .gatekeeper, call.hasFaceTimeMarker, call.hasContainerSignature,
       call.answerControl != nil, call.declineControl != nil, call.callerText == "unavailable" else { return }
     let now = nowNanoseconds()
@@ -137,6 +141,9 @@ extension NotificationCenterMonitor {
         pending.lastSeenAt = nowNanoseconds()
         pending.missingChecks = 0
         pendingUnverifiedCall = pending
+
+        // The 900 ms window gives Notification Center time to populate delayed
+        // caller text. If it remains absent, gatekeeper mode fails closed.
         if milliseconds(from: pending.firstSeenAt) >= unverifiedIdentityGraceMs, let decline = snapshot.declineControl {
           pendingUnverifiedCall = nil
           detectionCount += 1

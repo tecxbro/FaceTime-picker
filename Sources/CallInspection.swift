@@ -80,6 +80,9 @@ func inspectCandidate(root: AXUIElement, identity: TrustedIdentityIndex) -> Call
   let rootRole = axString(root, kAXRoleAttribute as CFString) ?? ""
   let rootSubrole = axString(root, kAXSubroleAttribute as CFString) ?? ""
 
+  // Notification Center's Accessibility tree is undocumented and can contain
+  // cycles or large unrelated subtrees. Breadth-first traversal is bounded by
+  // both depth and node count to keep call handling responsive.
   var queue: [(AXUIElement, Int)] = [(root, 0)]
   var cursor = 0
   var seen: Set<AXElementIdentity> = []
@@ -128,6 +131,8 @@ func inspectCandidate(root: AXUIElement, identity: TrustedIdentityIndex) -> Call
   }
 
   if answerControl == nil || declineControl == nil {
+    // Some macOS versions put the label below a pressable parent while others
+    // expose it inside the button's descendants. Search both representations.
     for record in records where record.pressable {
       let localTexts = [record.text] + subtreeText(record.element, maxDepth: 2, maxNodes: 18)
       if answerControl == nil && localTexts.contains(where: looksLikeAnswerLabel) { answerControl = record.element }
@@ -147,6 +152,8 @@ func inspectCandidate(root: AXUIElement, identity: TrustedIdentityIndex) -> Call
   let identityMs = milliseconds(from: identityStarted)
   let scanMs = milliseconds(from: scanStarted)
 
+  // The fingerprint contains normalized state, not an AX object address. It is
+  // stable enough to deduplicate repeated observer and polling discoveries.
   let fingerprintParts = [
     normalizeSearchText(callerText), identityMatch.source.rawValue,
     answerControl == nil ? "no-answer" : "answer",

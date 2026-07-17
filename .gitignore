@@ -1,7 +1,5 @@
 .DS_Store
 build/
-.phase1-proven
-.phase2-proven
 config/trusted-callers.local.json
 *.local.json
 .env
