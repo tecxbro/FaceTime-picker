@@ -82,6 +82,7 @@ enum ConfigurationError: Error, LocalizedError {
   }
 }
 
+// Accessibility calls can block when Notification Center is changing. These limits keep each scan bounded.
 let accessibilityTimeout: Float = 0.12
 let maxCandidateAncestors = 10
 let maxCandidateDepth = 10
@@ -93,6 +94,8 @@ let maxObserverRegistrationPairs = 1_200
 let maxRegistrationFailureSamples = 8
 let heartbeatInterval: TimeInterval = 5.0
 let activeCallCheckInterval: TimeInterval = 0.10
+
+// Blank/internal identities get time to resolve; the cooldown prevents duplicate presses for one call.
 let unverifiedIdentityGraceMs = 900.0
 let recentActionCooldownMs = 1_500.0
 

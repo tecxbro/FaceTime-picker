@@ -7,6 +7,7 @@ enum IdentitySourceConfiguration: Equatable, Sendable {
   static func fromEnvironment(
     _ environment: [String: String] = ProcessInfo.processInfo.environment
   ) -> IdentitySourceConfiguration {
+    // No path means the safest zero-setup option: ask for numbers in this Terminal session.
     guard
       let rawPath = environment["FACETIME_PICKER_SQLITE_PATH"]?.trimmingCharacters(
         in: .whitespacesAndNewlines),

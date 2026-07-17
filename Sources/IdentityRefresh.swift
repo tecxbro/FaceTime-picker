@@ -17,8 +17,13 @@ final class IdentityRefreshCoordinator: @unchecked Sendable {
   private var isRefreshing = false
   private var failClosedApplied = false
 
-  init(source: ConfiguredTrustedCallerSource, sourceKind: String, refreshInterval: TimeInterval,
-    maxStaleSeconds: TimeInterval, monitor: NotificationCenterMonitor) {
+  init(
+    source: ConfiguredTrustedCallerSource,
+    sourceKind: String,
+    refreshInterval: TimeInterval,
+    maxStaleSeconds: TimeInterval,
+    monitor: NotificationCenterMonitor
+  ) {
     self.source = source
     self.sourceKind = sourceKind
     self.refreshInterval = refreshInterval
@@ -27,8 +32,13 @@ final class IdentityRefreshCoordinator: @unchecked Sendable {
   }
 
   func start() {
+    // Database I/O and Contacts resolution stay off the main run loop used by Accessibility events.
     let timer = DispatchSource.makeTimerSource(queue: queue)
-    timer.schedule(deadline: .now() + refreshInterval, repeating: refreshInterval, leeway: .seconds(2))
+    timer.schedule(
+      deadline: .now() + refreshInterval,
+      repeating: refreshInterval,
+      leeway: .seconds(2)
+    )
     timer.setEventHandler { [weak self] in self?.refresh() }
     self.timer = timer
     timer.resume()
@@ -38,6 +48,7 @@ final class IdentityRefreshCoordinator: @unchecked Sendable {
     guard !isRefreshing else { return }
     isRefreshing = true
     defer { isRefreshing = false }
+
     do {
       let snapshot = try source.load()
       let resolution = resolveTrustedIdentities(numbers: snapshot.phoneNumbers)
@@ -51,6 +62,8 @@ final class IdentityRefreshCoordinator: @unchecked Sendable {
     } catch {
       let staleSeconds = Date().timeIntervalSince(lastSuccessfulRefresh)
       logLine("IDENTITY REFRESH FAILED source=\(sourceKind) staleSeconds=\(Int(staleSeconds))")
+
+      // Once the last good snapshot is too old, trusting nobody is safer than trusting stale data.
       if staleSeconds >= maxStaleSeconds, !failClosedApplied {
         failClosedApplied = true
         DispatchQueue.main.async { [weak self] in

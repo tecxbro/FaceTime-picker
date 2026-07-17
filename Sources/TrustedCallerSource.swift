@@ -58,6 +58,7 @@ final class ConfiguredTrustedCallerSource: TrustedCallerSource, @unchecked Senda
   }
 
   private func loadFromTerminalOnce() throws -> TrustedCallerSnapshot {
+    // Keep the prompt result in memory so no later code path can unexpectedly prompt again.
     lock.lock()
     if let terminalSnapshot {
       lock.unlock()
@@ -82,6 +83,7 @@ final class ConfiguredTrustedCallerSource: TrustedCallerSource, @unchecked Senda
   private func loadFromSQLite(url: URL) throws -> TrustedCallerSnapshot {
     #if os(macOS)
       var database: OpaquePointer?
+      // The Swift process never writes to the user's allowlist. run.sh owns optional setup changes.
       let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX
       guard sqlite3_open_v2(url.path, &database, flags, nil) == SQLITE_OK, let database else {
         if let database { sqlite3_close(database) }
@@ -90,6 +92,7 @@ final class ConfiguredTrustedCallerSource: TrustedCallerSource, @unchecked Senda
       defer { sqlite3_close(database) }
       sqlite3_busy_timeout(database, 750)
 
+      // A fixed schema keeps the query reviewable and avoids interpolating table or column names.
       let query = "SELECT phone_number FROM trusted_callers WHERE enabled = 1"
       var statement: OpaquePointer?
       guard sqlite3_prepare_v2(database, query, -1, &statement, nil) == SQLITE_OK,
@@ -125,6 +128,7 @@ func validatedSnapshot(
     let trimmed = number.trimmingCharacters(in: .whitespacesAndNewlines)
     let digits = digitsOnly(trimmed)
     guard (7...15).contains(digits.count) else { throw IdentitySourceError.invalidPhoneNumber }
+    // Compare canonical digits so differently formatted copies of one number do not create duplicates.
     guard seen.insert(digits).inserted else { continue }
     validated.append(trimmed)
   }
