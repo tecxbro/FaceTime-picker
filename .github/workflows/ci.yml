@@ -2,13 +2,9 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
-      - local
+    branches: [main]
   pull_request:
-    branches:
-      - main
-      - local
+    branches: [main]
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -22,13 +18,17 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v6
-      - name: Swift version
-        run: swift --version
+
+      - name: Validate shell scripts
+        run: zsh -n build.sh test.sh run.sh
+
       - name: Core tests
-        run: zsh "./Validate Core Logic.command"
+        run: zsh ./test.sh
+
       - name: Native macOS build
         run: zsh ./build.sh
+
       - name: Configuration regression scan
         run: |
-          ! grep -RIn --exclude-dir=.git -- '--trusted-number' Sources *.command
-          ! grep -RIn --exclude-dir=.git 'var number = "+' Sources
+          ! grep -RIn --exclude-dir=.git --exclude-dir=build -- '--trusted-number' .
+          ! grep -RIn --exclude-dir=.git --exclude-dir=build 'var number = "+' Sources Tests
