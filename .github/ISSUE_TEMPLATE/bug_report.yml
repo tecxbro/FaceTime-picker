@@ -1,0 +1,163 @@
+name: Bug report
+description: Report incorrect detection, matching, refresh, build, or call-action behavior.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve FaceTime Picker.
+
+        Do not include real phone numbers, caller names, endpoint URLs, authentication values, or unredacted `--log-caller-text` output. Security vulnerabilities should follow `SECURITY.md` rather than this public form.
+
+  - type: input
+    id: commit
+    attributes:
+      label: Commit SHA
+      description: The exact commit tested.
+      placeholder: 86f699a8f97cf17bb391552a8642c1eb714c58af
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and build
+      description: Include the full version and build number from About This Mac or `sw_vers`.
+      placeholder: macOS 15.x, build 24...
+    validations:
+      required: true
+
+  - type: input
+    id: hardware
+    attributes:
+      label: Mac model and architecture
+      placeholder: MacBook Pro, Apple silicon
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Run mode
+      options:
+        - detector
+        - answer-trusted
+        - gatekeeper
+        - build or core tests only
+    validations:
+      required: true
+
+  - type: dropdown
+    id: source
+    attributes:
+      label: Identity source
+      options:
+        - local JSON
+        - HTTPS endpoint
+        - not applicable
+    validations:
+      required: true
+
+  - type: dropdown
+    id: contacts
+    attributes:
+      label: Contacts authorization
+      options:
+        - full or authorized
+        - limited and trusted contact included
+        - limited and trusted contact excluded
+        - denied
+        - restricted
+        - not determined
+        - unknown or not applicable
+    validations:
+      required: true
+
+  - type: dropdown
+    id: accessibility
+    attributes:
+      label: Accessibility permission
+      options:
+        - enabled for the current build/FaceTimePicker executable
+        - disabled
+        - uncertain
+        - not applicable
+    validations:
+      required: true
+
+  - type: dropdown
+    id: call_type
+    attributes:
+      label: FaceTime scenario
+      options:
+        - incoming video call
+        - incoming audio call
+        - no live call; startup or provider problem
+        - other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: caller_presentation
+    attributes:
+      label: Caller presentation
+      description: Do not enter the actual number or name.
+      options:
+        - trusted raw phone number
+        - trusted unique saved full name
+        - trusted unique nickname
+        - explicit untrusted raw phone number
+        - explicit untrusted saved name
+        - ambiguous saved alias
+        - missing or generic identity
+        - not applicable or unknown
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Use placeholders and test data only.
+      placeholder: |
+        1. Exported a test-only local JSON source.
+        2. Started detector mode.
+        3. Placed an incoming FaceTime video call from a trusted test caller.
+        4. Observed ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Privacy-safe logs
+      description: Remove all personal data, URLs, tokens, and raw caller text before posting.
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety checks
+      options:
+        - label: I stopped action mode after an incorrect Answer or Decline action.
+        - label: I reproduced the problem in detector mode when possible.
+        - label: I reviewed the report and logs for phone numbers, names, endpoint URLs, and credentials.
+          required: true
+        - label: This is not a private security vulnerability requiring the process in SECURITY.md.
+          required: true
