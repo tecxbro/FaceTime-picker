@@ -94,6 +94,10 @@ The allowlist is cached in memory and refreshed every 300 seconds by default, or
 
 If refreshes fail, the last valid snapshot remains active only until `FACETIME_PICKER_MAX_STALE_SECONDS` (default: 900). After that, the allowlist is cleared and the program fails closed: no caller is trusted until the source recovers.
 
+## Source layout
+
+The native implementation is split into focused Swift modules for configuration, Contacts resolution, Accessibility traversal, call-card inspection, monitoring, refresh behavior, and startup. The build compiles every `Sources/*.swift` file.
+
 ## Validation
 
 ```zsh
