@@ -1,72 +1,73 @@
 import Foundation
 
-#if canImport(FoundationNetworking)
-  import FoundationNetworking
-#endif
-
 enum IdentitySourceConfiguration: Equatable, Sendable {
-  case https(url: URL, headers: [String: String], timeoutSeconds: Double)
+  case terminal
+  case sqlite(
+    url: URL,
+    table: String,
+    phoneColumn: String,
+    enabledColumn: String
+  )
   case jsonFile(url: URL)
 
   static func fromEnvironment(_ environment: [String: String] = ProcessInfo.processInfo.environment)
     throws -> IdentitySourceConfiguration
   {
-    let rawURL = environment["FACETIME_PICKER_IDENTITY_URL"]?.trimmingCharacters(
+    let rawSQLite = environment["FACETIME_PICKER_SQLITE_PATH"]?.trimmingCharacters(
       in: .whitespacesAndNewlines)
     let rawFile = environment["FACETIME_PICKER_IDENTITY_FILE"]?.trimmingCharacters(
       in: .whitespacesAndNewlines)
 
-    let hasURL = !(rawURL ?? "").isEmpty
+    let hasSQLite = !(rawSQLite ?? "").isEmpty
     let hasFile = !(rawFile ?? "").isEmpty
-    guard hasURL || hasFile else { throw IdentitySourceError.missingSource }
-    guard !(hasURL && hasFile) else { throw IdentitySourceError.conflictingSources }
+    guard !(hasSQLite && hasFile) else { throw IdentitySourceError.conflictingSources }
 
-    if let rawURL, hasURL {
-      guard let url = URL(string: rawURL), url.host != nil else {
-        throw IdentitySourceError.invalidURL
+    if let rawSQLite, hasSQLite {
+      let table = environment["FACETIME_PICKER_SQLITE_TABLE"] ?? "trusted_callers"
+      let phoneColumn = environment["FACETIME_PICKER_SQLITE_PHONE_COLUMN"] ?? "phone_number"
+      let enabledColumn = environment["FACETIME_PICKER_SQLITE_ENABLED_COLUMN"] ?? "enabled"
+      guard isValidSQLiteIdentifier(table), isValidSQLiteIdentifier(phoneColumn),
+        isValidSQLiteIdentifier(enabledColumn)
+      else {
+        throw IdentitySourceError.invalidSQLiteIdentifier
       }
-      guard url.scheme?.lowercased() == "https" else { throw IdentitySourceError.insecureURL }
-
-      let timeout = max(
-        1, min(Double(environment["FACETIME_PICKER_REQUEST_TIMEOUT_SECONDS"] ?? "8") ?? 8, 30))
-      let headerMappings = environment["FACETIME_PICKER_HEADER_ENVS"] ?? ""
-      var headers: [String: String] = [:]
-      for item in headerMappings.split(separator: ",", omittingEmptySubsequences: true) {
-        let mapping = String(item).trimmingCharacters(in: .whitespacesAndNewlines)
-        let pieces = mapping.split(separator: "=", maxSplits: 1).map(String.init)
-        guard pieces.count == 2 else { throw IdentitySourceError.invalidHeaderEnvironment(mapping) }
-        let header = pieces[0].trimmingCharacters(in: .whitespacesAndNewlines)
-        let environmentName = pieces[1].trimmingCharacters(in: .whitespacesAndNewlines)
-        guard isValidHTTPHeaderName(header), !environmentName.isEmpty else {
-          throw IdentitySourceError.invalidHeaderEnvironment(mapping)
-        }
-        guard let value = environment[environmentName], !value.isEmpty else {
-          throw IdentitySourceError.missingHeaderEnvironment(environmentName)
-        }
-        guard !value.contains("\r"), !value.contains("\n") else {
-          throw IdentitySourceError.invalidHeaderValue(environmentName)
-        }
-        headers[header] = value
-      }
-      return .https(url: url, headers: headers, timeoutSeconds: timeout)
+      let expanded = NSString(string: rawSQLite).expandingTildeInPath
+      return .sqlite(
+        url: URL(fileURLWithPath: expanded),
+        table: table,
+        phoneColumn: phoneColumn,
+        enabledColumn: enabledColumn
+      )
     }
 
-    guard let rawFile, hasFile else { throw IdentitySourceError.missingSource }
-    let expanded = NSString(string: rawFile).expandingTildeInPath
-    return .jsonFile(url: URL(fileURLWithPath: expanded))
+    if let rawFile, hasFile {
+      let expanded = NSString(string: rawFile).expandingTildeInPath
+      return .jsonFile(url: URL(fileURLWithPath: expanded))
+    }
+
+    return .terminal
   }
 
   var sourceKind: String {
     switch self {
-    case .https: return "https"
+    case .terminal: return "terminal"
+    case .sqlite: return "sqlite"
     case .jsonFile: return "jsonFile"
+    }
+  }
+
+  var supportsRefresh: Bool {
+    switch self {
+    case .terminal: return false
+    case .sqlite, .jsonFile: return true
     }
   }
 }
 
-func isValidHTTPHeaderName(_ name: String) -> Bool {
-  guard !name.isEmpty else { return false }
-  let allowed = CharacterSet(
-    charactersIn: "!#$%&'*+-.^_`|~0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-  return name.unicodeScalars.allSatisfy { allowed.contains($0) }
+func isValidSQLiteIdentifier(_ value: String) -> Bool {
+  guard let first = value.unicodeScalars.first else { return false }
+  let firstAllowed = CharacterSet.letters.union(CharacterSet(charactersIn: "_"))
+  let remainingAllowed = firstAllowed.union(.decimalDigits)
+  guard firstAllowed.contains(first) else { return false }
+  return value.unicodeScalars.dropFirst().allSatisfy { remainingAllowed.contains($0) }
 }

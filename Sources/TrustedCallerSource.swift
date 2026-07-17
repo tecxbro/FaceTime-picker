@@ -1,82 +1,101 @@
 import Foundation
 
-#if canImport(FoundationNetworking)
-  import FoundationNetworking
+#if os(macOS)
+  import SQLite3
 #endif
 
 protocol TrustedCallerSource: Sendable {
   func load() throws -> TrustedCallerSnapshot
 }
 
-struct ConfiguredTrustedCallerSource: TrustedCallerSource {
+final class ConfiguredTrustedCallerSource: TrustedCallerSource, @unchecked Sendable {
   let configuration: IdentitySourceConfiguration
+  private let lock = NSLock()
+  private var terminalSnapshot: TrustedCallerSnapshot?
+
+  init(configuration: IdentitySourceConfiguration) {
+    self.configuration = configuration
+  }
 
   func load() throws -> TrustedCallerSnapshot {
-    let data: Data
     switch configuration {
+    case .terminal:
+      return try loadFromTerminalOnce()
     case .jsonFile(let url):
-      guard let loaded = try? Data(contentsOf: url, options: [.mappedIfSafe]) else {
+      guard let data = try? Data(contentsOf: url, options: [.mappedIfSafe]) else {
         throw IdentitySourceError.fileReadFailed
       }
-      data = loaded
-    case .https(let url, let headers, let timeoutSeconds):
-      data = try fetch(url: url, headers: headers, timeoutSeconds: timeoutSeconds)
+      return try decodeTrustedCallerSnapshot(data)
+    case .sqlite(let url, let table, let phoneColumn, let enabledColumn):
+      return try loadFromSQLite(
+        url: url,
+        table: table,
+        phoneColumn: phoneColumn,
+        enabledColumn: enabledColumn
+      )
     }
-    return try decodeTrustedCallerSnapshot(data)
   }
 
-  private func fetch(url: URL, headers: [String: String], timeoutSeconds: Double) throws -> Data {
-    var request = URLRequest(
-      url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData, timeoutInterval: timeoutSeconds
-    )
-    request.httpMethod = "GET"
-    request.setValue("application/json", forHTTPHeaderField: "Accept")
-    for (name, value) in headers {
-      request.setValue(value, forHTTPHeaderField: name)
-    }
-
-    let result = SynchronousURLResult()
-    let semaphore = DispatchSemaphore(value: 0)
-    let task = URLSession.shared.dataTask(with: request) { data, response, error in
-      result.set(data: data, response: response, error: error)
-      semaphore.signal()
-    }
-    task.resume()
-    guard semaphore.wait(timeout: .now() + timeoutSeconds + 1) == .success else {
-      task.cancel()
-      throw IdentitySourceError.requestTimedOut
-    }
-    let snapshot = result.read()
-    if snapshot.error != nil { throw IdentitySourceError.transportFailure }
-    guard let response = snapshot.response as? HTTPURLResponse else {
-      throw IdentitySourceError.transportFailure
-    }
-    guard response.statusCode == 200 else {
-      throw IdentitySourceError.invalidHTTPStatus(response.statusCode)
-    }
-    guard let data = snapshot.data else { throw IdentitySourceError.invalidPayload }
-    return data
-  }
-}
-
-private final class SynchronousURLResult: @unchecked Sendable {
-  private let lock = NSLock()
-  private var data: Data?
-  private var response: URLResponse?
-  private var error: Error?
-
-  func set(data: Data?, response: URLResponse?, error: Error?) {
+  private func loadFromTerminalOnce() throws -> TrustedCallerSnapshot {
     lock.lock()
-    self.data = data
-    self.response = response
-    self.error = error
+    if let terminalSnapshot {
+      lock.unlock()
+      return terminalSnapshot
+    }
     lock.unlock()
+
+    print("Enter trusted phone number(s), separated by commas:")
+    guard let line = readLine() else { throw IdentitySourceError.terminalInputUnavailable }
+    let values = line
+      .split(separator: ",", omittingEmptySubsequences: true)
+      .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+
+    let snapshot = try validatedSnapshot(phoneNumbers: values, suggestedTTLSeconds: nil)
+    lock.lock()
+    terminalSnapshot = snapshot
+    lock.unlock()
+    return snapshot
   }
 
-  func read() -> (data: Data?, response: URLResponse?, error: Error?) {
-    lock.lock()
-    defer { lock.unlock() }
-    return (data, response, error)
+  private func loadFromSQLite(
+    url: URL,
+    table: String,
+    phoneColumn: String,
+    enabledColumn: String
+  ) throws -> TrustedCallerSnapshot {
+    #if os(macOS)
+      var database: OpaquePointer?
+      let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX
+      guard sqlite3_open_v2(url.path, &database, flags, nil) == SQLITE_OK, let database else {
+        if let database { sqlite3_close(database) }
+        throw IdentitySourceError.sqliteOpenFailed
+      }
+      defer { sqlite3_close(database) }
+      sqlite3_busy_timeout(database, 750)
+
+      let query =
+        "SELECT \"\(phoneColumn)\" FROM \"\(table)\" WHERE \"\(enabledColumn)\" = 1"
+      var statement: OpaquePointer?
+      guard sqlite3_prepare_v2(database, query, -1, &statement, nil) == SQLITE_OK,
+        let statement
+      else {
+        throw IdentitySourceError.sqliteQueryFailed
+      }
+      defer { sqlite3_finalize(statement) }
+
+      var phoneNumbers: [String] = []
+      while true {
+        let result = sqlite3_step(statement)
+        if result == SQLITE_DONE { break }
+        guard result == SQLITE_ROW else { throw IdentitySourceError.sqliteQueryFailed }
+        guard let raw = sqlite3_column_text(statement, 0) else { continue }
+        phoneNumbers.append(String(cString: raw))
+      }
+      return try validatedSnapshot(phoneNumbers: phoneNumbers, suggestedTTLSeconds: 30)
+    #else
+      throw IdentitySourceError.sqliteUnavailable
+    #endif
   }
 }
 
@@ -87,8 +106,8 @@ func decodeTrustedCallerSnapshot(_ data: Data) throws -> TrustedCallerSnapshot {
   let envelope: TrustedCallerEnvelope
   if let decoded = try? decoder.decode(TrustedCallerEnvelope.self, from: data) {
     envelope = decoded
-  } else if let callers = try? decoder.decode([TrustedCallerRecord].self, from: data) {
-    envelope = TrustedCallerEnvelope(trustedCallers: callers)
+  } else if let records = try? decoder.decode([TrustedCallerRecord].self, from: data) {
+    envelope = TrustedCallerEnvelope(trustedCallers: records)
   } else {
     throw IdentitySourceError.invalidPayload
   }
@@ -96,20 +115,26 @@ func decodeTrustedCallerSnapshot(_ data: Data) throws -> TrustedCallerSnapshot {
   guard envelope.schemaVersion == 1 else {
     throw IdentitySourceError.unsupportedSchemaVersion(envelope.schemaVersion)
   }
+  let enabledNumbers = envelope.trustedCallers.filter(\.enabled).map(\.phoneNumber)
+  return try validatedSnapshot(
+    phoneNumbers: enabledNumbers,
+    suggestedTTLSeconds: envelope.cacheTTLSeconds
+  )
+}
 
-  var normalizedNumbers: [String] = []
-  var seen: Set<String> = []
-  for record in envelope.trustedCallers where record.enabled {
-    let digits = digitsOnly(record.phoneNumber)
-    guard digits.count >= 7, digits.count <= 15 else {
-      throw IdentitySourceError.invalidPhoneNumber
-    }
-    if seen.insert(digits).inserted {
-      normalizedNumbers.append(record.phoneNumber.trimmingCharacters(in: .whitespacesAndNewlines))
-    }
+func validatedSnapshot(phoneNumbers: [String], suggestedTTLSeconds: Int?) throws
+  -> TrustedCallerSnapshot
+{
+  var seen = Set<String>()
+  var validated: [String] = []
+  for number in phoneNumbers {
+    let trimmed = number.trimmingCharacters(in: .whitespacesAndNewlines)
+    let digits = digitsOnly(trimmed)
+    guard (7...15).contains(digits.count) else { throw IdentitySourceError.invalidPhoneNumber }
+    guard seen.insert(digits).inserted else { continue }
+    validated.append(trimmed)
   }
-  guard !normalizedNumbers.isEmpty else { throw IdentitySourceError.emptyAllowlist }
-
-  let ttl = envelope.cacheTTLSeconds.map { max(30, min($0, 86_400)) }
-  return TrustedCallerSnapshot(phoneNumbers: normalizedNumbers, suggestedTTLSeconds: ttl)
+  guard !validated.isEmpty else { throw IdentitySourceError.emptyAllowlist }
+  let ttl = suggestedTTLSeconds.map { max(5, min($0, 86_400)) }
+  return TrustedCallerSnapshot(phoneNumbers: validated, suggestedTTLSeconds: ttl)
 }

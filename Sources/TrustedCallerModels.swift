@@ -1,9 +1,5 @@
 import Foundation
 
-#if canImport(FoundationNetworking)
-  import FoundationNetworking
-#endif
-
 struct TrustedCallerRecord: Codable, Equatable, Sendable {
   let id: String?
   let phoneNumber: String
@@ -33,7 +29,9 @@ struct TrustedCallerRecord: Codable, Equatable, Sendable {
       throw DecodingError.keyNotFound(
         CodingKeys.phoneNumber,
         DecodingError.Context(
-          codingPath: decoder.codingPath, debugDescription: "Expected phoneNumber or phone_number")
+          codingPath: decoder.codingPath,
+          debugDescription: "Expected phoneNumber or phone_number"
+        )
       )
     }
     enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
@@ -96,57 +94,45 @@ struct TrustedCallerSnapshot: Equatable, Sendable {
 }
 
 enum IdentitySourceError: Error, LocalizedError, Equatable {
-  case missingSource
   case conflictingSources
-  case invalidURL
-  case insecureURL
-  case invalidHeaderEnvironment(String)
-  case missingHeaderEnvironment(String)
-  case invalidHeaderValue(String)
+  case invalidSQLiteIdentifier
+  case terminalInputUnavailable
   case fileReadFailed
   case responseTooLarge
-  case invalidHTTPStatus(Int)
   case invalidPayload
   case unsupportedSchemaVersion(Int)
   case invalidPhoneNumber
   case emptyAllowlist
-  case requestTimedOut
-  case transportFailure
+  case sqliteOpenFailed
+  case sqliteQueryFailed
+  case sqliteUnavailable
 
   var errorDescription: String? {
     switch self {
-    case .missingSource:
-      return "Configure FACETIME_PICKER_IDENTITY_URL or FACETIME_PICKER_IDENTITY_FILE."
     case .conflictingSources:
-      return "Configure exactly one identity source: URL or file, not both."
-    case .invalidURL:
-      return "The configured identity URL is invalid."
-    case .insecureURL:
-      return "The identity URL must use HTTPS. Use a local JSON file for offline development."
-    case .invalidHeaderEnvironment(let value):
-      return "Invalid header mapping: \(value). Expected Header-Name=ENVIRONMENT_VARIABLE."
-    case .missingHeaderEnvironment(let name):
-      return "The required header environment variable \(name) is not set."
-    case .invalidHeaderValue(let name):
-      return "The header value loaded from \(name) is invalid."
+      return "Configure either FACETIME_PICKER_SQLITE_PATH or FACETIME_PICKER_IDENTITY_FILE, not both. Leave both unset to type numbers in Terminal."
+    case .invalidSQLiteIdentifier:
+      return "SQLite table and column names may contain only letters, numbers, and underscores and may not begin with a number."
+    case .terminalInputUnavailable:
+      return "Trusted phone numbers could not be read from Terminal."
     case .fileReadFailed:
-      return "The identity JSON file could not be read."
+      return "The local identity JSON file could not be read."
     case .responseTooLarge:
-      return "The identity response exceeded the 256 KB safety limit."
-    case .invalidHTTPStatus(let status):
-      return "The identity endpoint returned HTTP \(status)."
+      return "The local identity JSON exceeded the 256 KB safety limit."
     case .invalidPayload:
-      return "The identity response did not match the documented JSON contract."
+      return "The local identity JSON did not match the documented schema."
     case .unsupportedSchemaVersion(let version):
       return "Unsupported identity schema version \(version)."
     case .invalidPhoneNumber:
-      return "The identity response contained an invalid phone number."
+      return "A trusted phone number must contain 7 to 15 digits."
     case .emptyAllowlist:
-      return "The identity response contained no enabled trusted callers."
-    case .requestTimedOut:
-      return "The identity endpoint request timed out."
-    case .transportFailure:
-      return "The identity endpoint request failed."
+      return "No enabled trusted callers were provided."
+    case .sqliteOpenFailed:
+      return "The local SQLite database could not be opened read-only."
+    case .sqliteQueryFailed:
+      return "The local SQLite trusted-caller query failed. Check the documented schema."
+    case .sqliteUnavailable:
+      return "SQLite identity sources are supported only on macOS."
     }
   }
 }
