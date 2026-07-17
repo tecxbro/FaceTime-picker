@@ -90,6 +90,8 @@ enum ConfigurationError: Error, LocalizedError {
   }
 }
 
+// Accessibility operations are deliberately bounded. Notification Center's AX
+// tree is undocumented, so every traversal and registration path needs a limit.
 let accessibilityTimeout: Float = 0.12
 let maxCandidateAncestors = 10
 let maxCandidateDepth = 10
@@ -101,6 +103,9 @@ let maxObserverRegistrationPairs = 1_200
 let maxRegistrationFailureSamples = 8
 let heartbeatInterval: TimeInterval = 5.0
 let activeCallCheckInterval: TimeInterval = 0.10
+
+// Missing caller text can appear shortly after the buttons. Wait briefly before
+// gatekeeper mode declines, then suppress repeated actions during UI churn.
 let unverifiedIdentityGraceMs = 900.0
 let recentActionCooldownMs = 1_500.0
 
@@ -128,6 +133,4 @@ func quoteForLog(_ value: String) -> String {
     + value.replacingOccurrences(of: "\\", with: "\\\\")
     .replacingOccurrences(of: "\"", with: "\\\"") + "\""
 }
-
-// MARK: - Contacts
 #endif
