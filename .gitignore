@@ -7,3 +7,9 @@ config/trusted-callers.local.json
 .env
 .env.*
 !.env.example
+local-data/
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm

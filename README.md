@@ -1,119 +1,132 @@
-# FaceTime Picker
+# FaceTime Picker — Local Branch
 
-A native Swift 6 macOS helper that watches the compact incoming FaceTime call surface in Notification Center and applies a runtime allowlist:
+This branch is the offline/local edition of FaceTime Picker. It keeps the tested Phase 3 behavior:
 
 - trusted caller → Answer
-- explicit non-match → Decline in full-gatekeeper mode
-- blank or generic identity → wait 900 ms, re-check, then fail closed
+- non-matching caller → Decline
+- missing or internal caller identity → wait 900 ms, re-check, then fail closed
 
-The repository contains **no real phone numbers, contact names, API URLs, or credentials**. Trusted numbers are loaded at runtime from a local JSON file or an HTTPS endpoint.
+`main` is unchanged. This branch does not require a cloud database or network endpoint.
 
-## Why the database integration is provider-agnostic
+## Choose a local trusted-caller source
 
-FaceTime Picker does not bundle database drivers. Instead, it consumes a tiny JSON contract over HTTPS. Any database—Supabase, Firebase, PostgreSQL, MySQL, MongoDB, Airtable, DynamoDB, or an internal system—can sit behind a small API or serverless function that returns that contract.
+### Option 1: type numbers in Terminal
 
-This is more portable and safer than connecting a desktop Accessibility tool directly to production databases.
+Leave these variables unset:
 
-See [docs/IDENTITY_API.md](docs/IDENTITY_API.md) and [openapi/trusted-callers.yaml](openapi/trusted-callers.yaml).
+```zsh
+unset FACETIME_PICKER_SQLITE_PATH
+unset FACETIME_PICKER_IDENTITY_FILE
+```
 
-## Requirements
+Run a launcher. FaceTime Picker asks:
 
-- macOS 14.4 or later
-- Swift 6 / Xcode Command Line Tools
-- FaceTime
-- Accessibility permission for the compiled `build/FaceTimePicker` executable
-- Contacts permission if FaceTime displays saved names rather than raw numbers
+```text
+Enter trusted phone number(s), separated by commas:
+```
 
-## Configure a trusted-caller source
+The numbers remain only in the running process. They are not written to disk or printed in logs.
 
-### Local JSON for development
+### Option 2: local SQLite database
+
+Create a local database:
+
+```zsh
+zsh "./Initialize Local SQLite.command"
+```
+
+Then set its path:
+
+```zsh
+export FACETIME_PICKER_SQLITE_PATH="$PWD/local-data/trusted-callers.sqlite3"
+```
+
+Expected schema:
+
+```sql
+CREATE TABLE trusted_callers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  phone_number TEXT NOT NULL UNIQUE,
+  enabled INTEGER NOT NULL DEFAULT 1
+);
+```
+
+Only rows with `enabled = 1` are trusted. The database is opened read-only by the app and refreshed every 30 seconds by default.
+
+Custom table or column names are supported through:
+
+```zsh
+export FACETIME_PICKER_SQLITE_TABLE="trusted_callers"
+export FACETIME_PICKER_SQLITE_PHONE_COLUMN="phone_number"
+export FACETIME_PICKER_SQLITE_ENABLED_COLUMN="enabled"
+```
+
+Names are strictly validated before being inserted into SQL.
+
+### Option 3: local JSON file
 
 ```zsh
 cp config/trusted-callers.example.json config/trusted-callers.local.json
-# Replace the example number only in the ignored local file.
 export FACETIME_PICKER_IDENTITY_FILE="$PWD/config/trusted-callers.local.json"
 ```
 
-### HTTPS endpoint for a database-backed deployment
+Real local databases, JSON files, proof markers, builds, and environment files are ignored by Git.
 
-```zsh
-export FACETIME_PICKER_IDENTITY_URL="https://your-service.example/trusted-callers"
-```
+## Run safely
 
-For arbitrary authentication headers, map header names to environment-variable names:
-
-```zsh
-export FACETIME_PICKER_HEADER_ENVS="Authorization=FACETIME_PICKER_AUTHORIZATION,apikey=FACETIME_PICKER_API_KEY"
-export FACETIME_PICKER_AUTHORIZATION="Bearer replace-at-runtime"
-export FACETIME_PICKER_API_KEY="replace-at-runtime"
-```
-
-Secrets are never accepted as command-line arguments and are never printed.
-
-## Safe rollout
-
-### Phase 1: detector
+### Phase 1 — read-only detector
 
 ```zsh
 zsh "./Build and Run Detector.command"
 ```
 
-This mode never presses Answer or Decline.
-
-### Phase 2: trusted answer
-
-After testing the detector:
+### Phase 2 — answer trusted callers only
 
 ```zsh
 zsh "./Mark Phase 1 Proven.command"
 zsh "./Build and Run Trusted Answer.command"
 ```
 
-This mode answers trusted callers and leaves all others ringing.
-
-### Phase 3: full gatekeeper
-
-After proving trusted auto-answer:
+### Phase 3 — answer trusted, decline others
 
 ```zsh
 zsh "./Mark Phase 2 Proven.command"
 zsh "./Build and Run Gatekeeper.command"
 ```
 
-This mode answers trusted callers and declines non-matches. A missing or internal Accessibility label is not treated as caller identity; it receives the 900 ms grace period.
+The launchers still require explicit confirmation before enabling camera/microphone exposure or declining calls.
 
-## Privacy defaults
+## Permissions
 
-Normal logs contain only states such as `trusted`, `untrusted`, and `unverified`. They do not print the allowlist, contact aliases, endpoint URL, headers, credentials, or caller text.
+Add the compiled executable—not the folder or launcher—to:
 
-For local debugging only, raw caller text can be enabled by invoking the binary with `--log-caller-text`. Do not use that flag in shared logs.
+```text
+System Settings → Privacy & Security → Accessibility
+```
 
-## Runtime refresh and failure behavior
+The executable is:
 
-The allowlist is cached in memory and refreshed every 300 seconds by default, or according to `cacheTTLSeconds` in the response. Set `--refresh-seconds N` to override it.
+```text
+build/FaceTimePicker
+```
 
-If refreshes fail, the last valid snapshot remains active only until `FACETIME_PICKER_MAX_STALE_SECONDS` (default: 900). After that, the allowlist is cleared and the program fails closed: no caller is trusted until the source recovers.
+Allow Contacts access so saved FaceTime display names can be resolved from the typed or locally stored phone numbers.
 
-## Source layout
+## Privacy and safety
 
-The native implementation is split into focused Swift modules for configuration, Contacts resolution, Accessibility traversal, call-card inspection, monitoring, refresh behavior, and startup. The build compiles every `Sources/*.swift` file.
+- No trusted phone number is committed.
+- Terminal-entered numbers are held only in memory.
+- SQLite is opened read-only.
+- Database identifiers are validated against a strict allowlist.
+- Caller text is hidden by default.
+- Internal Accessibility identifiers such as `widgets-overlay-view` are not caller identities.
+- If a refreshable local source becomes unavailable and the cache expires, the app clears the allowlist and fails closed.
 
-## Validation
+## Validate
 
 ```zsh
 zsh "./Validate Core Logic.command"
 zsh ./build.sh
 ```
 
-CI runs both on a GitHub-hosted macOS runner.
-
-## Important limitations
-
-- This relies on undocumented details of the macOS Accessibility representation of FaceTime notifications and must be re-tested after major macOS updates.
-- Overall answer time includes time controlled by FaceTime/macOS before the call controls become accessible.
-- English Answer/Decline labels are currently supported.
-- A database is not contacted during each call; the in-memory snapshot is used so call handling remains fast.
-
-## License
-
-MIT. See [LICENSE](LICENSE).
+This project depends on undocumented macOS Accessibility behavior and must be retested after major macOS updates.

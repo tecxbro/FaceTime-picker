@@ -1,24 +1,30 @@
 #!/bin/zsh
 set -euo pipefail
-has_url=0
+
+has_sqlite=0
 has_file=0
-[[ -n "${FACETIME_PICKER_IDENTITY_URL:-}" ]] && has_url=1
+[[ -n "${FACETIME_PICKER_SQLITE_PATH:-}" ]] && has_sqlite=1
 [[ -n "${FACETIME_PICKER_IDENTITY_FILE:-}" ]] && has_file=1
-if (( has_url + has_file != 1 )); then
+
+if (( has_sqlite + has_file > 1 )); then
   cat <<'EOF'
-Configure exactly one trusted-caller source before running:
+Configure only one local trusted-caller source:
 
-  export FACETIME_PICKER_IDENTITY_URL="https://your-service.example/trusted-callers"
+  FACETIME_PICKER_SQLITE_PATH
+  FACETIME_PICKER_IDENTITY_FILE
 
-or for local development:
-
-  export FACETIME_PICKER_IDENTITY_FILE="$PWD/config/trusted-callers.local.json"
-
-See docs/IDENTITY_API.md.
+Leave both unset to type trusted number(s) interactively in Terminal.
 EOF
   exit 1
 fi
-if (( has_url )) && [[ "$FACETIME_PICKER_IDENTITY_URL" != https://* ]]; then
-  print "FACETIME_PICKER_IDENTITY_URL must use HTTPS."
+
+if (( has_sqlite )) && [[ ! -f "${FACETIME_PICKER_SQLITE_PATH/#\~/$HOME}" ]]; then
+  print "SQLite database not found: $FACETIME_PICKER_SQLITE_PATH"
+  print "Run: zsh \"./Initialize Local SQLite.command\""
+  exit 1
+fi
+
+if (( has_file )) && [[ ! -f "${FACETIME_PICKER_IDENTITY_FILE/#\~/$HOME}" ]]; then
+  print "Local JSON identity file not found: $FACETIME_PICKER_IDENTITY_FILE"
   exit 1
 fi
