@@ -140,7 +140,7 @@ struct FaceTimePickerMain {
     switch configuration.mode {
     case .detector:
       logLine(
-        "READ-ONLY DETECTOR ENABLED. No calls will be answered or declined. Press Control+C to stop."
+        "READ-ONLY DIAGNOSTICS ENABLED. No calls will be answered or declined. Press Control+C to stop."
       )
     case .answerTrusted:
       logLine(
@@ -148,7 +148,7 @@ struct FaceTimePickerMain {
       )
     case .gatekeeper:
       logLine(
-        "FULL GATEKEEPER ENABLED. Trusted calls are answered. Non-matching, ambiguous, or unverified calls are declined. Press Control+C to stop."
+        "FACETIME PICKER ENABLED. Trusted callers are answered automatically; callers that do not safely match are declined. Press Control+C to stop."
       )
     }
 
