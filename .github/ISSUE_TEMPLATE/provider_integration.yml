@@ -1,0 +1,132 @@
+name: Provider integration problem
+description: Report a trusted-caller API, authentication, deployment, or response-contract problem.
+title: "[Provider]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for Supabase, Firebase, or another database-backed HTTPS source.
+
+        Never post real phone numbers, endpoint URLs, tokens, API keys, database credentials, project IDs, or complete production responses. Replace them with obvious placeholders.
+
+  - type: input
+    id: commit
+    attributes:
+      label: FaceTime Picker commit SHA
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Provider
+      options:
+        - Supabase Edge Functions
+        - Firebase Cloud Functions
+        - Another serverless function provider
+        - Internal HTTPS service
+        - Database REST interface
+        - Local JSON file
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Failure stage
+      options:
+        - provider deployment
+        - curl verification
+        - FaceTime Picker startup load
+        - periodic refresh
+        - authentication
+        - response decoding or validation
+        - Contacts matching after a successful load
+        - other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: response_shape
+    attributes:
+      label: Response shape
+      options:
+        - canonical camelCase envelope
+        - snake_case envelope
+        - bare camelCase array
+        - bare snake_case array
+        - unknown or not applicable
+    validations:
+      required: true
+
+  - type: dropdown
+    id: auth
+    attributes:
+      label: Authentication method
+      options:
+        - Authorization bearer header
+        - API-key header
+        - multiple mapped headers
+        - provider gateway JWT
+        - no authentication during local testing
+        - other
+    validations:
+      required: true
+
+  - type: textarea
+    id: redacted_response
+    attributes:
+      label: Redacted response example
+      description: Preserve field names and types but replace every real value.
+      render: json
+      placeholder: |
+        {
+          "schemaVersion": 1,
+          "trustedCallers": [
+            {
+              "id": "example-id",
+              "phoneNumber": "+1 202 555 0147",
+              "enabled": true
+            }
+          ],
+          "cacheTTLSeconds": 300
+        }
+
+  - type: textarea
+    id: command
+    attributes:
+      label: Redacted verification command and result
+      description: Remove the real hostname, project ID, token, key, and phone numbers.
+      render: shell
+
+  - type: textarea
+    id: error
+    attributes:
+      label: Exact privacy-safe error
+      description: Include HTTP status or FaceTime Picker error text without secrets.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: attempted
+    attributes:
+      label: What you already checked
+      placeholder: |
+        - Confirmed HTTPS and HTTP 200
+        - Confirmed at least one enabled record
+        - Confirmed all enabled numbers contain 7–15 digits
+        - Confirmed mapped environment variables exist in the launch shell
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I replaced real phone numbers, names, endpoint URLs, project identifiers, and credentials with placeholders.
+          required: true
+        - label: I did not include a service-role key, secret key, service-account credential, or shared bearer token.
+          required: true
