@@ -44,17 +44,23 @@ struct FaceTimePickerMain {
     do { configuration = try Configuration.parse(arguments: CommandLine.arguments) }
     catch { writeError(error.localizedDescription); exit(2) }
 
+    // Action modes require both the requested mode and a separate acknowledgement
+    // supplied by run.sh. Direct binary invocation cannot enable actions by mode alone.
     if configuration.mode != .detector && !configuration.confirmedEnable {
       writeError("Refusing to enable call actions without the launcher's explicit confirmation.")
       exit(2)
     }
 
     let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+    // macOS displays this permission prompt asynchronously. Exiting here avoids
+    // running a partially authorized monitor; the user grants access and reruns.
     guard AXIsProcessTrustedWithOptions([promptKey: true] as CFDictionary) else {
       writeError("Accessibility permission is missing. Add the compiled FaceTimePicker executable under System Settings → Privacy & Security → Accessibility, enable it, then run again.")
       exit(3)
     }
 
+    // Monitoring starts only after a complete valid snapshot is available. This
+    // prevents a transient source failure from being interpreted as an empty allowlist.
     let source = ConfiguredTrustedCallerSource(configuration: configuration.identitySource)
     let callerSnapshot: TrustedCallerSnapshot
     do { callerSnapshot = try source.load() }
@@ -95,6 +101,9 @@ struct FaceTimePickerMain {
     case .gatekeeper:
       logLine("FULL GATEKEEPER ENABLED. Trusted calls are answered. Non-matching, ambiguous, or unverified calls are declined. Press Control+C to stop.")
     }
+
+    // The monitor owns AX callbacks and the refresher owns its dispatch timer.
+    // Extend both lifetimes for the duration of the main run loop.
     withExtendedLifetime((monitor, refresher)) { RunLoop.main.run() }
   }
 }
