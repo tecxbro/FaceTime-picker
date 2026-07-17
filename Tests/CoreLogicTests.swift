@@ -44,7 +44,9 @@ struct CoreLogicTests {
     expect(envelopeSnapshot.phoneNumbers == ["+1 202 555 0147"], "envelope payload decoding")
     expect(envelopeSnapshot.suggestedTTLSeconds == 120, "payload TTL")
 
-    let arrayJSON = """[{"id":"primary","phone_number":"+44 20 7946 0958","enabled":true}]""".data(using: .utf8)!
+    let arrayJSON = """
+      [{"id":"primary","phone_number":"+44 20 7946 0958","enabled":true}]
+      """.data(using: .utf8)!
     let arraySnapshot = try decodeTrustedCallerSnapshot(arrayJSON)
     expect(arraySnapshot.phoneNumbers == ["+44 20 7946 0958"], "bare array and snake_case decoding")
 
