@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Swift version
+        run: swift --version
+      - name: Core tests
+        run: zsh "./Validate Core Logic.command"
+      - name: Native macOS build
+        run: zsh ./build.sh
+      - name: Configuration regression scan
+        run: |
+          ! grep -RIn --exclude-dir=.git -- '--trusted-number' Sources *.command
+          ! grep -RIn --exclude-dir=.git 'var number = "+' Sources
