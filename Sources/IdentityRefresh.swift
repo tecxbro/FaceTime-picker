@@ -22,6 +22,9 @@ final class IdentityRefreshCoordinator: @unchecked Sendable {
     self.source = source
     self.sourceKind = sourceKind
     self.refreshInterval = refreshInterval
+
+    // Never expire a snapshot before the next scheduled refresh attempt. Without
+    // this floor, a long provider TTL could create an avoidable trust blackout.
     self.maxStaleSeconds = max(maxStaleSeconds, refreshInterval)
     self.monitor = monitor
   }
@@ -35,6 +38,7 @@ final class IdentityRefreshCoordinator: @unchecked Sendable {
   }
 
   private func refresh() {
+    // Slow endpoints must not create overlapping refreshes or reorder snapshots.
     guard !isRefreshing else { return }
     isRefreshing = true
     defer { isRefreshing = false }
@@ -54,6 +58,8 @@ final class IdentityRefreshCoordinator: @unchecked Sendable {
       if staleSeconds >= maxStaleSeconds, !failClosedApplied {
         failClosedApplied = true
         DispatchQueue.main.async { [weak self] in
+          // Clearing the index is the fail-closed state: no caller can be
+          // answered as trusted until a complete valid snapshot is loaded again.
           self?.monitor?.updateIdentity(.empty, source: "expiredFailClosed")
           logLine("IDENTITY CACHE EXPIRED. No callers are trusted until the identity source recovers.")
         }
